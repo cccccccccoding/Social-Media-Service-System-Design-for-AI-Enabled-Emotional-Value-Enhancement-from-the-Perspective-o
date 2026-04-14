@@ -1,0 +1,34 @@
+{
+  "clusters": [
+    {
+      "type": "image",
+      "path": "/cluster-assets/image 321.png",
+      "name": "image 321.png"
+    },
+    {
+      "type": "image",
+      "path": "/cluster-assets/image 322.png",
+      "name": "image 322.png"
+    },
+    {
+      "type": "image",
+      "path": "/cluster-assets/image 323.png",
+      "name": "image 323.png"
+    },
+    {
+      "type": "image",
+      "path": "/cluster-assets/image 324.png",
+      "name": "image 324.png"
+    },
+    {
+      "type": "image",
+      "path": "/cluster-assets/image 325.png",
+      "name": "image 325.png"
+    },
+    {
+      "type": "image",
+      "path": "/cluster-assets/image 326.png",
+      "name": "image 326.png"
+    }
+  ]
+}
