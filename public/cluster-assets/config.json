@@ -2,33 +2,28 @@
   "clusters": [
     {
       "type": "image",
-      "path": "/cluster-assets/image 321.png",
-      "name": "image 321.png"
+      "path": "/cluster-assets/image 261 1.png",
+      "name": "image 261 1.png"
     },
     {
       "type": "image",
-      "path": "/cluster-assets/image 322.png",
-      "name": "image 322.png"
+      "path": "/cluster-assets/image 262 1.png",
+      "name": "image 262 1.png"
     },
     {
       "type": "image",
-      "path": "/cluster-assets/image 323.png",
-      "name": "image 323.png"
+      "path": "/cluster-assets/image 262 2.png",
+      "name": "image 262 2.png"
     },
     {
       "type": "image",
-      "path": "/cluster-assets/image 324.png",
-      "name": "image 324.png"
+      "path": "/cluster-assets/image 263 1.png",
+      "name": "image 263 1.png"
     },
     {
       "type": "image",
-      "path": "/cluster-assets/image 325.png",
-      "name": "image 325.png"
-    },
-    {
-      "type": "image",
-      "path": "/cluster-assets/image 326.png",
-      "name": "image 326.png"
+      "path": "/cluster-assets/image 269 1.png",
+      "name": "image 269 1.png"
     }
   ]
 }
