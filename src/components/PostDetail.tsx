@@ -1183,7 +1183,7 @@ export default function PostDetail({ onBack, refreshGifs, refreshClusters, clust
         </div>
 
         {/* Scrollable Content */}
-        <div ref={scrollContainerRef} className={`flex-1 overflow-y-auto flex flex-col ${viewMode === 'list' ? 'pb-32 bg-white' : 'pb-24 bg-transparent'}`} onClick={handleBgClick}>
+        <div ref={scrollContainerRef} className={`flex-1 overflow-y-auto flex flex-col ${viewMode === 'list' ? 'pb-32 bg-white' : 'pb-0 bg-transparent'}`} onClick={handleBgClick}>
           <div className="p-4 border-b border-[#f5f5f5] shrink-0 bg-white">
             <h1 className="text-xl font-bold mb-2">{POST_DATA.title}</h1>
             <p className="text-[#666666] text-sm leading-relaxed mb-4">
@@ -2111,6 +2111,8 @@ const OpenWorldView = forwardRef(({ comments, customUserIp, interactionCounts, s
   const [scale, setScale] = useState(1.5); // 默认缩放值 1.5，使屏幕内有约 3-4 个团组
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [isWheeling, setIsWheeling] = useState(false);
+  const wheelTimerRef = useRef<any>(null);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   // 当刷新小团组视觉时，也刷新团组位置
@@ -2255,22 +2257,26 @@ const OpenWorldView = forwardRef(({ comments, customUserIp, interactionCounts, s
       return 30 + (replyCount * 3); // 减小基础大小，确保更多团组能显示
     };
 
-    // 碰撞检测函数（基于团组边缘）
+    // 碰撞检测函数
+    // 视觉有效半径 = 云朵不透明区域（约为包围盒的50%）+ IP轨道（约125px）+ 最小间距（30px）
+    const visualRadius = (size: number) => {
+      const cloudOpaqueRadius = (size + 50) * 0.5;
+      const ipOrbitExtent = 125;
+      const minGap = 30;
+      return (Math.max(cloudOpaqueRadius, ipOrbitExtent) + minGap) / 8.5; // 转为百分比单位
+    };
+
     const checkCollision = (newX: number, newY: number, newSize: number, existingGroups: any[]) => {
-      const newGroupHalfWidth = (newSize * 2 + 150) / 8.5; // 转换为百分比单位（850px容器）
-      
       for (const group of existingGroups) {
-        const groupHalfWidth = (group.size * 2 + 150) / 8.5; // 转换为百分比单位（850px容器）
         const dx = newX - group.x;
         const dy = newY - group.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        const minDistance = newGroupHalfWidth + groupHalfWidth; // 完全不重叠
+        const minDistance = visualRadius(newSize) + visualRadius(group.size);
         if (distance < minDistance) {
-          console.log('⚠️ 检测到碰撞:', { newX, newY, newSize, groupX: group.x, groupY: group.y, groupSize: group.size, distance, minDistance });
-          return true; // 碰撞
+          return true;
         }
       }
-      return false; // 无碰撞
+      return false;
     };
 
     const result: any[] = [];
@@ -2287,28 +2293,24 @@ const OpenWorldView = forwardRef(({ comments, customUserIp, interactionCounts, s
         const clampedSize = Math.min(groupSize, maxGroupSize);
 
         // 初始位置边界检查
-        const initialGroupHalfWidth = (clampedSize * 2 + 150) / 8.5;
-        normalizedX = Math.max(margin + initialGroupHalfWidth, Math.min(100 - margin - initialGroupHalfWidth, normalizedX));
-        normalizedY = Math.max(margin + initialGroupHalfWidth, Math.min(100 - margin - initialGroupHalfWidth, normalizedY));
+        const r = visualRadius(clampedSize);
+        normalizedX = Math.max(margin + r, Math.min(100 - margin - r, normalizedX));
+        normalizedY = Math.max(margin + r, Math.min(100 - margin - r, normalizedY));
 
         // 碰撞检测和位置调整
         let attempts = 0;
-        const maxAttempts = 100; // 增加尝试次数
+        const maxAttempts = 300;
         let collision = true;
 
         while (collision && attempts < maxAttempts) {
           collision = checkCollision(normalizedX, normalizedY, clampedSize, result);
           if (collision) {
-            // 随机调整位置，增加移动距离
             const angle = Math.random() * Math.PI * 2;
-            const distance = (clampedSize * 2 + 150) / 8.5 * 0.8; // 转换为百分比单位
-            normalizedX += Math.cos(angle) * distance;
-            normalizedY += Math.sin(angle) * distance;
-            
-            // 确保位置在边界内（基于团组边缘）
-            const groupHalfWidth = (clampedSize * 2 + 150) / 8.5;
-            normalizedX = Math.max(margin + groupHalfWidth, Math.min(100 - margin - groupHalfWidth, normalizedX));
-            normalizedY = Math.max(margin + groupHalfWidth, Math.min(100 - margin - groupHalfWidth, normalizedY));
+            const step = r * 0.8;
+            normalizedX += Math.cos(angle) * step;
+            normalizedY += Math.sin(angle) * step;
+            normalizedX = Math.max(margin + r, Math.min(100 - margin - r, normalizedX));
+            normalizedY = Math.max(margin + r, Math.min(100 - margin - r, normalizedY));
             
             attempts++;
           }
@@ -2654,21 +2656,15 @@ const OpenWorldView = forwardRef(({ comments, customUserIp, interactionCounts, s
     if (isDragging) {
       const newX = e.clientX - dragStart.x;
       const newY = e.clientY - dragStart.y;
-      
-      // 计算边界限制 - 随缩放倍数动态变化
-      const baseMaxX = 225;
-      const baseMaxY = 205;
-      const baseMinY = 0;
-      
-      // 偏移量随缩放倍数放大
-      const maxX = baseMaxX * scale;
-      const maxY = baseMaxY * scale;
-      const minY = baseMinY * scale;
-      
-      // 限制位置范围
-      const clampedX = Math.max(-maxX, Math.min(maxX, newX));
-      const clampedY = Math.min(maxY, Math.max(minY, newY));
-      
+
+      const containerW = containerRef.current?.clientWidth ?? 750;
+      const containerH = containerRef.current?.clientHeight ?? 750;
+      const maxOffsetX = Math.max(0, (850 * scale - containerW) / 2);
+      const maxOffsetY = Math.max(0, (850 * scale - containerH) / 2);
+
+      const clampedX = Math.max(-maxOffsetX, Math.min(maxOffsetX, newX));
+      const clampedY = Math.max(-maxOffsetY, Math.min(maxOffsetY, newY));
+
       setPosition({ x: clampedX, y: clampedY });
     }
   };
@@ -2678,14 +2674,8 @@ const OpenWorldView = forwardRef(({ comments, customUserIp, interactionCounts, s
     setIsDragging(false);
   };
 
-  // 处理滚轮缩放
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const zoomIntensity = 0.1;
-    const newScale = scale + (e.deltaY > 0 ? -zoomIntensity : zoomIntensity);
-    // 限制缩放范围 - 最小缩放值设为0.4，最大设为3
-    const clampedScale = Math.max(0.4, Math.min(3, newScale));
-    setScale(clampedScale);
+  const handleWheel = (_e: React.WheelEvent) => {
+    // 缩放逻辑已移至原生非 passive 监听器，此处仅占位
   };
 
   const timerRef = useRef<any>(null);
@@ -2970,6 +2960,35 @@ const OpenWorldView = forwardRef(({ comments, customUserIp, interactionCounts, s
 
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // 用原生非 passive 监听器拦截触控板捏合，防止触发浏览器页面缩放
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const zoomIntensity = 0.01;
+      const newScale = scale - e.deltaY * zoomIntensity;
+      setIsWheeling(true);
+      clearTimeout(wheelTimerRef.current);
+      wheelTimerRef.current = setTimeout(() => setIsWheeling(false), 150);
+      const containerW = el.clientWidth ?? 750;
+      const containerH = el.clientHeight ?? 750;
+      const minScale = Math.max(containerW, containerH) / 850;
+      const clampedScale = Math.max(minScale, Math.min(3, newScale));
+      setScale(clampedScale);
+      const maxOffsetX = Math.max(0, (850 * clampedScale - containerW) / 2);
+      const maxOffsetY = Math.max(0, (850 * clampedScale - containerH) / 2);
+      setPosition((prev: { x: number; y: number }) => ({
+        x: Math.max(-maxOffsetX, Math.min(maxOffsetX, prev.x)),
+        y: Math.max(-maxOffsetY, Math.min(maxOffsetY, prev.y)),
+      }));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [scale]);
+
   return (
   <>
     <div 
@@ -3059,7 +3078,7 @@ const OpenWorldView = forwardRef(({ comments, customUserIp, interactionCounts, s
           top: '50%',
           transform: `translate(-50%, -50%) translate(${position.x}px, ${position.y}px) scale(${scale})`,
           transformOrigin: 'center center',
-          transition: isDragging ? 'none' : 'transform 0.2s ease-out'
+          transition: (isDragging || isWheeling) ? 'none' : 'transform 0.2s ease-out'
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
