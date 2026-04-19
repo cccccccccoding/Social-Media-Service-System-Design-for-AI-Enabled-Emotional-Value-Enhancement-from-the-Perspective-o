@@ -1229,7 +1229,15 @@ export default function PostDetail({ onBack, refreshGifs, refreshClusters, clust
                 世界 <Sparkles className="w-3.5 h-3.5" />
               </button>
             </div>
-            <span className="text-xs text-[#666666]">共 {comments.length + comments.reduce((acc, c) => acc + (c.replies?.length || 0), 0)} 条</span>
+            <div className="flex items-center gap-2">
+              {viewMode === 'world' && (
+                <div className="flex items-center gap-1 bg-purple-50 rounded-full px-2 py-0.5 border border-purple-100">
+                  <Sparkles className="w-2.5 h-2.5 text-purple-400" />
+                  <span className="text-[10px] text-purple-400 font-medium">话题语义分布</span>
+                </div>
+              )}
+              <span className="text-xs text-[#666666]">共 {comments.length + comments.reduce((acc, c) => acc + (c.replies?.length || 0), 0)} 条</span>
+            </div>
           </div>
 
           {viewMode === 'list' ? (
@@ -2158,68 +2166,91 @@ const OpenWorldView = forwardRef(({ comments, customUserIp, interactionCounts, s
     return particlesMap;
   }, [comments]);
 
-  // 生成模拟的语义向量
+  // 基于字符串生成确定性哈希种子
+  const hashStr = (s: string) => {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0;
+    }
+    return h;
+  };
+
+  // 确定性伪随机（LCG）
+  const makeRng = (seed: number) => {
+    let s = seed >>> 0;
+    return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 0xffffffff; };
+  };
+
+  // 生成语义向量（无关键词时基于文本哈希，确保相同文本总得到相同向量）
   const generateSemanticVector = (text: string) => {
-    // 简单的文本特征提取，基于关键词
-    const keywords = {
-      '艺术': [0.9, 0.2, 0.1, 0.3],
-      '美食': [0.1, 0.9, 0.2, 0.1],
-      '设计': [0.3, 0.1, 0.9, 0.2],
-      '情感': [0.2, 0.3, 0.1, 0.9],
-      '旅游': [0.4, 0.2, 0.3, 0.6],
-      '数码': [0.1, 0.2, 0.8, 0.3],
-      '宠物': [0.2, 0.7, 0.1, 0.8]
+    const keywords: Record<string, number[]> = {
+      '艺术': [0.9, 0.2, 0.1, 0.3], '美食': [0.1, 0.9, 0.2, 0.1],
+      '设计': [0.3, 0.1, 0.9, 0.2], '情感': [0.2, 0.3, 0.1, 0.9],
+      '旅游': [0.4, 0.2, 0.3, 0.6], '数码': [0.1, 0.2, 0.8, 0.3],
+      '宠物': [0.2, 0.7, 0.1, 0.8], '生活': [0.5, 0.5, 0.3, 0.5],
+      '时尚': [0.6, 0.3, 0.7, 0.2], '运动': [0.3, 0.4, 0.5, 0.3],
+      '搞笑': [0.1, 0.5, 0.2, 0.8], '学习': [0.4, 0.1, 0.8, 0.3],
     };
 
     let vector = [0, 0, 0, 0];
     let totalWeight = 0;
-
-    // 检查文本中包含哪些关键词
-    for (const [keyword, weights] of Object.entries(keywords)) {
-      if (text.toLowerCase().includes(keyword)) {
-        for (let i = 0; i < vector.length; i++) {
-          vector[i] += weights[i];
-        }
+    for (const [kw, weights] of Object.entries(keywords)) {
+      if (text.includes(kw)) {
+        vector = vector.map((v, i) => v + weights[i]);
         totalWeight += 1;
       }
     }
 
-    // 归一化向量
     if (totalWeight > 0) {
       vector = vector.map(v => v / totalWeight);
     } else {
-      // 如果没有匹配的关键词，生成随机向量
-      vector = vector.map(() => Math.random());
+      // 无关键词：用文本哈希生成确定性向量，相同文本永远得到相同位置
+      const rng = makeRng(hashStr(text || 'default'));
+      vector = vector.map(() => rng());
     }
-
     return vector;
   };
 
-  // 简单的PCA降维函数
+  // 真正的PCA降维：用幂迭代法求前两个主成分，投影到二维
   const pcaReduce = (vectors: number[][]) => {
-    // 计算均值
-    const mean = vectors[0].map((_, i) => 
-      vectors.reduce((sum, v) => sum + v[i], 0) / vectors.length
+    if (vectors.length <= 1) return vectors.map(v => [v[0] ?? 0, v[1] ?? 0]);
+    const n = vectors.length;
+    const dim = vectors[0].length;
+
+    const mean = Array(dim).fill(0).map((_, i) =>
+      vectors.reduce((s, v) => s + v[i], 0) / n
+    );
+    const centered = vectors.map(v => v.map((val, i) => val - mean[i]));
+
+    // 协方差矩阵
+    const cov: number[][] = Array(dim).fill(0).map((_, i) =>
+      Array(dim).fill(0).map((_, j) =>
+        centered.reduce((s, v) => s + v[i] * v[j], 0) / Math.max(n - 1, 1)
+      )
     );
 
-    // 中心化
-    const centered = vectors.map(v => 
-      v.map((val, i) => val - mean[i])
-    );
-
-    // 计算协方差矩阵
-    const n = centered.length;
-    const dim = centered[0].length;
-    const cov = Array(dim).fill(0).map(() => Array(dim).fill(0));
-
-    for (let i = 0; i < dim; i++) {
-      for (let j = 0; j < dim; j++) {
-        cov[i][j] = centered.reduce((sum, v) => sum + v[i] * v[j], 0) / (n - 1);
+    // 幂迭代求最大特征向量
+    const powerIterate = (mat: number[][], seed = 42) => {
+      let v = Array(dim).fill(0).map((_, i) => Math.sin(seed + i)); // 确定性初始化
+      for (let iter = 0; iter < 200; iter++) {
+        const nv = mat.map(row => row.reduce((s, val, i) => s + val * v[i], 0));
+        const norm = Math.sqrt(nv.reduce((s, val) => s + val * val, 0)) || 1;
+        v = nv.map(val => val / norm);
       }
-    }
+      return v;
+    };
 
-    // 简化处理，直接返回前两个维度（模拟PCA）
-    return vectors.map(v => [v[0], v[1]]);
+    const pc1 = powerIterate(cov, 42);
+    // 收缩：去掉 pc1 方向的方差，求第二主成分
+    const deflated = cov.map((row, i) =>
+      row.map((val, j) => val - pc1[i] * pc1[j] * cov.reduce((s, _, k) => s + pc1[k] * pc1[k], 0))
+    );
+    const pc2 = powerIterate(deflated, 7);
+
+    return centered.map(v => [
+      v.reduce((s, val, i) => s + val * pc1[i], 0),
+      v.reduce((s, val, i) => s + val * pc2[i], 0),
+    ]);
   };
 
   // 计算团组基础数据（只在comments变化时重新计算）
@@ -2261,9 +2292,9 @@ const OpenWorldView = forwardRef(({ comments, customUserIp, interactionCounts, s
     // 视觉有效半径 = 云朵不透明区域（约为包围盒的50%）+ IP轨道（约125px）+ 最小间距（30px）
     const visualRadius = (size: number) => {
       const cloudOpaqueRadius = (size + 50) * 0.5;
-      const ipOrbitExtent = 125;
-      const minGap = 30;
-      return (Math.max(cloudOpaqueRadius, ipOrbitExtent) + minGap) / 8.5; // 转为百分比单位
+      const ipOrbitExtent = 70; // IP 轨道缩小后最远约70px
+      const minGap = 80; // 云朵之间保留80px空白
+      return (Math.max(cloudOpaqueRadius, ipOrbitExtent) + minGap) / 8.5;
     };
 
     const checkCollision = (newX: number, newY: number, newSize: number, existingGroups: any[]) => {
@@ -2302,10 +2333,11 @@ const OpenWorldView = forwardRef(({ comments, customUserIp, interactionCounts, s
         const maxAttempts = 300;
         let collision = true;
 
+        const rng = makeRng(hashStr(parent.id || String(i)));
         while (collision && attempts < maxAttempts) {
           collision = checkCollision(normalizedX, normalizedY, clampedSize, result);
           if (collision) {
-            const angle = Math.random() * Math.PI * 2;
+            const angle = rng() * Math.PI * 2;
             const step = r * 0.8;
             normalizedX += Math.cos(angle) * step;
             normalizedY += Math.sin(angle) * step;
@@ -2355,25 +2387,15 @@ const OpenWorldView = forwardRef(({ comments, customUserIp, interactionCounts, s
       
       console.log(`📝 团组 ${parent.id}: 原始回复数 ${parent.replies?.length || 0}, 限制后 ${limitedReplies.length}`);
       
-      // 简化位置计算，减少复杂度
+      // Fibonacci 黄金角螺旋：IP 从中心向外错落散布在云面上
+      const goldenAngle = Math.PI * (3 - Math.sqrt(5)); // ≈137.5°
+      const maxR = Math.min(parent.size + 10, 42); // 收紧范围
       const children = limitedReplies.map((child: any, index: number) => {
-        // 直接计算位置，不进行碰撞检测
-        const baseRadius = 55 + Math.random() * 25;
-        const maxRadiusX = baseRadius * 2 * 0.9; // 横向缩小到90%
-        const maxRadiusY = baseRadius;
-        
-        // 横向均匀分布
-        const side = index % 2 === 0 ? -1 : 1; // 左右交替
-        const x = side * (30 + (index * 15)); // 减少距离，更靠近中心
-        const y = -20 - (index * 15); // 减少纵向距离，更靠近中心
-        
-        // 计算角度和半径
-        const angle = Math.atan2(y, x);
-        const radiusRatio = Math.sqrt((x / maxRadiusX) ** 2 + (y / maxRadiusY) ** 2);
-        const radiusX = maxRadiusX * radiusRatio;
-        const radiusY = maxRadiusY * radiusRatio;
-        
-        return { ...child, angle, radiusX, radiusY };
+        const n = limitedReplies.length;
+        const r = Math.sqrt((index + 0.5) / n) * maxR + 6;
+        const angle = index * goldenAngle;
+        // 纵向略压扁（×0.8），让IP更贴合椭圆形的云
+        return { ...child, angle, radiusX: r, radiusY: r * 0.8 };
       });
 
       return { ...parent, children };
@@ -3142,8 +3164,7 @@ const OpenWorldView = forwardRef(({ comments, customUserIp, interactionCounts, s
         {/* Render Cluster Aura BELOW IPs */}
         {clusterAuraEnabled && groupedIps.map((parent: any) => {
           let clusterAsset = getRandomClusterAssetForId(parent.id);
-          
-          // 如果禁用本地资产，使用默认光晕
+
           if (!clusterLocalAssetsEnabled) {
             clusterAsset = {
               name: "默认光晕",
@@ -3152,31 +3173,58 @@ const OpenWorldView = forwardRef(({ comments, customUserIp, interactionCounts, s
               opacity: 0.6
             };
           }
-          
+
           const isImageAsset = clusterAsset.type === 'image';
-          
-          console.log('🎨 小团组视觉资产:', {
-            id: parent.id,
-            clusterAsset,
-            isImageAsset,
-            clusterLocalAssetsEnabled
-          });
-          
+
+          // 热度 = 当前团组所有IP的互动数之和
+          const allIps = [parent, ...(parent.children || [])];
+          const totalHeat = allIps.reduce((s: number, ip: any) => s + (interactionCounts[ip.id] || 0), 0);
+
+
+          // 热度映射到颜色：冷（蓝紫）→ 暖（橙红），归一化到0-1
+          const MAX_HEAT = 30;
+          const heatRatio = Math.min(totalHeat / MAX_HEAT, 1);
+          // 冷色 #a78bfa（紫） → 暖色 #fb923c（橙）
+          const r = Math.round(167 + (251 - 167) * heatRatio);
+          const g = Math.round(139 + (146 - 139) * heatRatio);
+          const b = Math.round(250 + (60 - 250) * heatRatio);
+          const heatColor = `rgb(${r},${g},${b})`;
+          const glowOpacity = 0.25 + heatRatio * 0.55; // 0.25 ~ 0.8，热门话题明显发光
+          const glowSize = (parent.size * 2 + 100) * (1 + heatRatio * 0.3); // 热门云光晕更大
+
+          const cloudSize = parent.size * 2 + 100;
+
           return (
             <div
               key={`aura-bg-${parent.id}`}
               className="absolute pointer-events-none z-[5]"
-              style={{ 
-                left: `${parent.x}%`, 
-                top: `${parent.y}%`, 
-                transform: 'translate(-50%, -50%)', 
+              style={{
+                left: `${parent.x}%`,
+                top: `${parent.y}%`,
+                transform: 'translate(-50%, -50%)',
               }}
             >
+              {/* 热度光晕：在云下方，颜色随热度变化 */}
               <div
                 className="absolute pointer-events-none"
                 style={{
-                  width: `${(parent.size * 2) + 100}px`, // 基于团组大小动态计算（调整为更小的尺寸）
-                  height: `${(parent.size * 2) + 100}px`, // 基于团组大小动态计算（调整为更小的尺寸）
+                  width: `${glowSize}px`,
+                  height: `${glowSize}px`,
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  borderRadius: '50%',
+                  background: `radial-gradient(circle, ${heatColor} 0%, transparent 70%)`,
+                  opacity: glowOpacity,
+                  filter: `blur(${16 + heatRatio * 24}px)`,
+                }}
+              />
+              {/* 云朵图片，大小由人数决定 */}
+              <div
+                className="absolute pointer-events-none"
+                style={{
+                  width: `${cloudSize}px`,
+                  height: `${cloudSize}px`,
                   left: '50%',
                   top: '50%',
                   transform: 'translate(-50%, -50%)',
@@ -3187,19 +3235,11 @@ const OpenWorldView = forwardRef(({ comments, customUserIp, interactionCounts, s
                     src={encodeURIComponent(clusterAsset.path).replace(/%2F/g, '/')}
                     alt={clusterAsset.name || 'Cluster Visual'}
                     className="absolute inset-0 w-full h-full object-contain"
-                    style={{
-                      filter: 'none',
-                      animation: 'none',
-                    }}
-                    onError={(e) => {
-                      console.error('❌ 图片加载失败:', clusterAsset.path, e);
-                    }}
-                    onLoad={(e) => {
-                      console.log('✅ 图片加载成功:', clusterAsset.path);
-                    }}
+                    style={{ filter: 'none', animation: 'none' }}
+                    onError={(e) => { console.error('❌ 图片加载失败:', clusterAsset.path, e); }}
                   />
                 ) : (
-                  <div 
+                  <div
                     className="absolute inset-0 rounded-full"
                     style={{
                       background: clusterAsset.style || 'radial-gradient(circle, rgba(243,243,241,0.9) 0%, rgba(243,243,241,0.4) 40%, transparent 70%)',
