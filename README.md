@@ -6,7 +6,7 @@
 
 ## 在线体验
 
-**[👉 点击打开 Demo](https://cccccccccoding.github.io/Co-Meme260419/app.html)**
+**[👉 点击打开 Demo](https://cccccccccoding.github.io/Social-Media-Service-System-Design-for-AI-Enabled-Emotional-Value-Enhancement-from-the-Perspective-o/app.html)**
 
 > 单文件 HTML，无需安装，直接在浏览器中运行。
 
