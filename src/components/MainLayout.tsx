@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ViewState } from '../App';
-import { Menu, Search, Plus, Share, LogOut } from 'lucide-react';
+import { Menu, Search, Plus, Share } from 'lucide-react';
 
 interface MainLayoutProps {
   currentTab: 'home' | 'profile';
@@ -81,7 +81,7 @@ export default function MainLayout({ currentTab, onNavigate }: MainLayoutProps) 
             <div className="bg-gradient-to-b from-[#5a2e2e] to-[#8b3a3a] text-white p-4 pb-16 relative">
               <div className="flex justify-between mb-5 cursor-pointer">
                 <div onClick={() => setIsDrawerOpen(true)}><Menu size={24} strokeWidth={2} /></div> 
-                <div className="flex gap-4"><LogOut size={24} strokeWidth={2} /> <Share size={24} strokeWidth={2} /></div>
+                <Share size={24} strokeWidth={2} />
               </div>
               <div className="flex items-center gap-4 mb-5">
                 <div className="w-[75px] h-[75px] rounded-full bg-[#cccccc] border-2 border-white/80 bg-[url('https://via.placeholder.com/150/ff7f7f/ffffff?text=Avatar')] bg-cover"></div>
@@ -152,7 +152,7 @@ export default function MainLayout({ currentTab, onNavigate }: MainLayoutProps) 
       <div className="absolute bottom-0 w-full bg-white border-t border-[#ebebeb] flex justify-around items-center z-50 px-6 pb-6 pt-3">
         <div className={`text-[15px] cursor-pointer flex items-center ${currentTab === 'home' ? 'text-[#333333] font-bold' : 'text-[#999999]'}`} onClick={() => onNavigate('home')}>首页</div>
         <div className="text-[15px] text-[#999999] cursor-pointer flex items-center">市集</div>
-        <div className="w-12 h-9 bg-[#ff2442] text-white rounded-xl flex justify-center items-center cursor-pointer" onClick={() => onNavigate('create_post')}>
+        <div className="w-12 h-9 bg-[#ff2442] text-white rounded-xl flex justify-center items-center cursor-default opacity-60">
           <Plus size={24} strokeWidth={2.5} />
         </div>
         <div className="text-[15px] text-[#999999] cursor-pointer flex items-center">消息</div>
